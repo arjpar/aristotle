@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y \
     libtool \
     libevdev-dev \
     python3.11 \
+    libmupdf-dev \
     pkg-config \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

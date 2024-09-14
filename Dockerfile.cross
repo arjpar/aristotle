@@ -1,0 +1,67 @@
+# Use Ubuntu 20.04 as the base image
+FROM --platform=linux/arm/v7 ubuntu:20.04 as builder
+
+ENV term=xterm
+ENV TZ="America/New_York"
+ARG DEBIAN_FRONTEND=noninteractive
+#RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+
+# Install necessary packages
+RUN dpkg --add-architecture armhf && \
+    apt-get update && apt-get install -yq \
+    curl \
+    build-essential \
+    gcc-arm-linux-gnueabihf \
+    g++-arm-linux-gnueabihf \
+    libevdev-dev:armhf \
+    dialog \
+    pkg-config \
+    tzdata \
+    && dpkg-reconfigure --frontend noninteractive tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Add ARM target
+RUN rustup target add arm-unknown-linux-gnueabihf
+
+# Set up cross-compilation environment variables
+ENV CARGO_TARGET_ARM_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc \
+    CC_arm_unknown_linux_gnueabihf=arm-linux-gnueabihf-gcc \
+    CXX_arm_unknown_linux_gnueabihf=arm-linux-gnueabihf-g++
+
+# Create a new stage for the final image
+FROM --platform=linux/arm/v7 ubuntu:20.04
+
+ENV term=xterm
+ENV TZ="America/New_York"
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Copy the Rust toolchain and ARM target from the builder
+COPY --from=builder /root/.cargo /root/.cargo
+COPY --from=builder /root/.rustup /root/.rustup
+
+# Set the PATH to include Rust binaries
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install necessary runtime packages
+RUN dpkg --add-architecture armhf && \
+    apt-get update && apt-get install -yq \
+    gcc-arm-linux-gnueabihf \
+    g++-arm-linux-gnueabihf \
+    libevdev-dev:armhf \
+    dialog \
+    pkg-config \
+    tzdata \
+    && dpkg-reconfigure --frontend noninteractive tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up cross-compilation environment variables
+ENV CARGO_TARGET_ARM_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc \
+    CC_arm_unknown_linux_gnueabihf=arm-linux-gnueabihf-gcc \
+    CXX_arm_unknown_linux_gnueabihf=arm-linux-gnueabihf-g++
+
+# Set the default command
+CMD ["/bin/bash"]

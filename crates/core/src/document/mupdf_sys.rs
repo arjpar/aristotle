@@ -39,42 +39,100 @@ pub enum FzLinkDropLinkFn {}
 pub enum FzSeparations {}
 pub enum FzImage {}
 
-#[link(name="mupdf")]
-#[link(name="mupdf_wrapper", kind="static")]
+#[link(name = "mupdf")]
+#[link(name = "mupdf_wrapper", kind = "static")]
 
-extern {
-    pub fn fz_new_context_imp(alloc_ctx: *const FzAllocContext, locks_ctx: *const FzLocksContext, cache_size: libc::size_t, version: *const libc::c_char) -> *mut FzContext;
+extern "C" {
+    pub fn fz_new_context_imp(
+        alloc_ctx: *const FzAllocContext,
+        locks_ctx: *const FzLocksContext,
+        cache_size: libc::size_t,
+        version: *const libc::c_char,
+    ) -> *mut FzContext;
     pub fn fz_drop_context(ctx: *mut FzContext);
     pub fn fz_register_document_handlers(ctx: *mut FzContext);
     pub fn fz_set_user_css(ctx: *mut FzContext, user_css: *const libc::c_char);
     pub fn fz_set_use_document_css(ctx: *mut FzContext, should_use: libc::c_int);
     pub fn mp_open_document(ctx: *mut FzContext, path: *const libc::c_char) -> *mut FzDocument;
-    pub fn mp_open_document_with_stream(ctx: *mut FzContext, kind: *const libc::c_char, stream: *mut FzStream) -> *mut FzDocument;
+    pub fn mp_open_document_with_stream(
+        ctx: *mut FzContext,
+        kind: *const libc::c_char,
+        stream: *mut FzStream,
+    ) -> *mut FzDocument;
     pub fn fz_drop_document(ctx: *mut FzContext, doc: *mut FzDocument);
-    pub fn fz_open_memory(ctx: *mut FzContext, data: *const libc::c_uchar, len: libc::size_t) -> *mut FzStream;
+    pub fn fz_open_memory(
+        ctx: *mut FzContext,
+        data: *const libc::c_uchar,
+        len: libc::size_t,
+    ) -> *mut FzStream;
     pub fn fz_drop_stream(ctx: *mut FzContext, stream: *mut FzStream);
     pub fn mp_count_pages(ctx: *mut FzContext, doc: *mut FzDocument) -> libc::c_int;
-    pub fn mp_page_number_from_location(ctx: *mut FzContext, doc: *mut FzDocument, loc: FzLocation) -> libc::c_int;
-    pub fn fz_lookup_metadata(ctx: *mut FzContext, doc: *mut FzDocument, key: *const libc::c_char, buf: *mut libc::c_char, size: libc::c_int) -> libc::c_int;
+    pub fn mp_page_number_from_location(
+        ctx: *mut FzContext,
+        doc: *mut FzDocument,
+        loc: FzLocation,
+    ) -> libc::c_int;
+    pub fn fz_lookup_metadata(
+        ctx: *mut FzContext,
+        doc: *mut FzDocument,
+        key: *const libc::c_char,
+        buf: *mut libc::c_char,
+        size: libc::c_int,
+    ) -> libc::c_int;
     pub fn fz_needs_password(ctx: *mut FzContext, doc: *mut FzDocument) -> libc::c_int;
     pub fn fz_is_document_reflowable(ctx: *mut FzContext, doc: *mut FzDocument) -> libc::c_int;
-    pub fn fz_layout_document(ctx: *mut FzContext, doc: *mut FzDocument, w: libc::c_float, h: libc::c_float, em: libc::c_float);
+    pub fn fz_layout_document(
+        ctx: *mut FzContext,
+        doc: *mut FzDocument,
+        w: libc::c_float,
+        h: libc::c_float,
+        em: libc::c_float,
+    );
     pub fn mp_load_outline(ctx: *mut FzContext, doc: *mut FzDocument) -> *mut FzOutline;
     pub fn fz_drop_outline(ctx: *mut FzContext, outline: *mut FzOutline);
     pub fn fz_device_rgb(ctx: *mut FzContext) -> *mut FzColorspace;
     pub fn fz_device_gray(ctx: *mut FzContext) -> *mut FzColorspace;
     pub fn fz_scale(sx: libc::c_float, sy: libc::c_float) -> FzMatrix;
-    pub fn mp_new_pixmap_from_page(ctx: *mut FzContext, page: *mut FzPage, mat: FzMatrix, cs: *mut FzColorspace, alpha: libc::c_int) -> *mut FzPixmap;
-    pub fn fz_set_pixmap_resolution(ctx: *mut FzContext, pix: *mut FzPixmap, xres: libc::c_int, yres: libc::c_int);
+    pub fn mp_new_pixmap_from_page(
+        ctx: *mut FzContext,
+        page: *mut FzPage,
+        mat: FzMatrix,
+        cs: *mut FzColorspace,
+        alpha: libc::c_int,
+    ) -> *mut FzPixmap;
+    pub fn fz_set_pixmap_resolution(
+        ctx: *mut FzContext,
+        pix: *mut FzPixmap,
+        xres: libc::c_int,
+        yres: libc::c_int,
+    );
     pub fn fz_drop_pixmap(ctx: *mut FzContext, pixmap: *mut FzPixmap);
-    pub fn mp_load_page(ctx: *mut FzContext, doc: *mut FzDocument, page_idx: libc::c_int) -> *mut FzPage;
+    pub fn mp_load_page(
+        ctx: *mut FzContext,
+        doc: *mut FzDocument,
+        page_idx: libc::c_int,
+    ) -> *mut FzPage;
     pub fn fz_drop_page(ctx: *mut FzContext, page: *mut FzPage);
     pub fn fz_bound_page(ctx: *mut FzContext, page: *mut FzPage) -> FzRect;
-    pub fn fz_run_page(ctx: *mut FzContext, page: *mut FzPage, dev: *mut FzDevice, mat: FzMatrix, cookie: *mut FzCookie);
+    pub fn fz_run_page(
+        ctx: *mut FzContext,
+        page: *mut FzPage,
+        dev: *mut FzDevice,
+        mat: FzMatrix,
+        cookie: *mut FzCookie,
+    );
     pub fn mp_load_links(ctx: *mut FzContext, page: *mut FzPage) -> *mut FzLink;
     pub fn fz_drop_link(ctx: *mut FzContext, link: *mut FzLink);
-    pub fn fz_resolve_link_dest(ctx: *mut FzContext, doc: *mut FzDocument, uri: *const libc::c_char) -> FzLinkDest;
-    pub fn mp_new_stext_page_from_page(ctx: *mut FzContext, page: *mut FzPage, options: *const FzTextOptions) -> *mut FzTextPage;
+    pub fn fz_resolve_link_dest(
+        ctx: *mut FzContext,
+        doc: *mut FzDocument,
+        uri: *const libc::c_char,
+    ) -> FzLinkDest;
+    pub fn mp_new_stext_page_from_page(
+        ctx: *mut FzContext,
+        page: *mut FzPage,
+        options: *const FzTextOptions,
+    ) -> *mut FzTextPage;
     pub fn fz_drop_stext_page(ctx: *mut FzContext, tp: *mut FzTextPage);
     pub fn fz_new_bbox_device(ctx: *mut FzContext, rect: *mut FzRect) -> *mut FzDevice;
     pub fn fz_close_device(ctx: *mut FzContext, dev: *mut FzDevice);
@@ -255,8 +313,8 @@ pub struct FzTextChar {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct FzLocation {
-	pub chapter: libc::c_int,
-	pub page: libc::c_int,
+    pub chapter: libc::c_int,
+    pub page: libc::c_int,
 }
 
 #[repr(C)]

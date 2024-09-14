@@ -68,3 +68,4 @@ cd mupdf_wrapper
 cd ..
 
 cargo build --release --target=arm-unknown-linux-gnueabihf -p plato
+#cross build --target=arm-unknown-linux-gnueabihf -p plato --image localhost/arjunlocal/aristotle-cross

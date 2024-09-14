@@ -1,20 +1,19 @@
-use super::mupdf_sys::*;
-
-use std::fs;
-use std::ptr;
-use std::slice;
-use std::char;
-use std::rc::Rc;
-use std::path::Path;
-use std::io::ErrorKind;
-use std::ffi::{CString, CStr};
-use std::os::unix::ffi::OsStrExt;
-use super::{Document, Location, TextLocation, BoundedText, TocEntry};
 use super::{chapter, chapter_relative};
-use crate::metadata::TextAlign;
-use crate::geom::{Boundary, CycleDir};
-use crate::unit::pt_to_px;
+use super::{BoundedText, Document, Location, TextLocation, TocEntry};
 use crate::framebuffer::Pixmap;
+use crate::geom::{Boundary, CycleDir};
+use crate::metadata::TextAlign;
+use crate::unit::pt_to_px;
+use mupdf_sys;
+use std::char;
+use std::ffi::{CStr, CString};
+use std::fs;
+use std::io::ErrorKind;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
+use std::ptr;
+use std::rc::Rc;
+use std::slice;
 
 const USER_STYLESHEET: &str = "css/html-user.css";
 
@@ -27,18 +26,18 @@ impl Into<Boundary> for FzRect {
     }
 }
 
-struct PdfContext(*mut FzContext);
+struct PdfContext(*mut fz_context);
 
 pub struct PdfOpener(Rc<PdfContext>);
 
 pub struct PdfDocument {
     ctx: Rc<PdfContext>,
-    doc: *mut FzDocument,
+    doc: *mut fz_document,
 }
 
 pub struct PdfPage<'a> {
     ctx: Rc<PdfContext>,
-    page: *mut FzPage,
+    page: *mut fz_page,
     index: usize,
     _doc: &'a PdfDocument,
 }
@@ -61,7 +60,7 @@ impl PdfOpener {
     pub fn open<P: AsRef<Path>>(&self, path: P) -> Option<PdfDocument> {
         unsafe {
             let c_path = CString::new(path.as_ref().as_os_str().as_bytes()).unwrap();
-            let doc = mp_open_document((self.0).0, c_path.as_ptr());
+            let doc = mupdf_open_document((self.0).0, c_path.as_ptr());
             if doc.is_null() {
                 None
             } else {
@@ -76,9 +75,11 @@ impl PdfOpener {
     // *magic* is a filename or a MIME type.
     pub fn open_memory(&self, magic: &str, buf: &[u8]) -> Option<PdfDocument> {
         unsafe {
-            let stream = fz_open_memory((self.0).0,
-                                        buf.as_ptr() as *const libc::c_uchar,
-                                        buf.len() as libc::size_t);
+            let stream = fz_open_memory(
+                (self.0).0,
+                buf.as_ptr() as *const libc::c_uchar,
+                buf.len() as libc::size_t,
+            );
             let c_magic = CString::new(magic).unwrap();
             let doc = mp_open_document_with_stream((self.0).0, c_magic.as_ptr(), stream);
             fz_drop_stream((self.0).0, stream);
@@ -95,8 +96,13 @@ impl PdfOpener {
 
     pub fn load_user_stylesheet(&mut self) {
         if let Ok(content) = fs::read_to_string(USER_STYLESHEET)
-                                .and_then(|s| CString::new(s).map_err(Into::into))
-                                .map_err(|e| if e.kind() != ErrorKind::NotFound { eprintln!("{:#}", e) }) {
+            .and_then(|s| CString::new(s).map_err(Into::into))
+            .map_err(|e| {
+                if e.kind() != ErrorKind::NotFound {
+                    eprintln!("{:#}", e)
+                }
+            })
+        {
             unsafe { fz_set_user_css((self.0).0, content.as_ptr()) }
         }
     }
@@ -148,7 +154,12 @@ impl PdfDocument {
                 } else {
                     Vec::new()
                 };
-                vec.push(TocEntry { title, location, index: current_index, children });
+                vec.push(TocEntry {
+                    title,
+                    location,
+                    index: current_index,
+                    children,
+                });
                 cur = (*cur).next;
             }
             vec
@@ -181,21 +192,21 @@ impl Document for PdfDocument {
                 } else {
                     Some(index)
                 }
-            },
+            }
             Location::Previous(index) => {
                 if index > 0 {
                     Some(index - 1)
                 } else {
                     None
                 }
-            },
+            }
             Location::Next(index) => {
                 if index < self.pages_count() - 1 {
                     Some(index + 1)
                 } else {
                     None
                 }
-            },
+            }
             Location::LocalUri(_index, uri) => {
                 let c_uri = CString::new(uri).unwrap();
                 let dest = unsafe { fz_resolve_link_dest(self.ctx.0, self.doc, c_uri.as_ptr()) };
@@ -204,14 +215,16 @@ impl Document for PdfDocument {
                 } else {
                     None
                 }
-            },
+            }
             _ => None,
         }
     }
 
     fn pixmap(&mut self, loc: Location, scale: f32) -> Option<(Pixmap, usize)> {
         let index = self.resolve_location(loc)?;
-        self.page(index).and_then(|page| page.pixmap(scale)).map(|pixmap| (pixmap, index))
+        self.page(index)
+            .and_then(|page| page.pixmap(scale))
+            .map(|pixmap| (pixmap, index))
     }
 
     fn toc(&mut self) -> Option<Vec<TocEntry>> {
@@ -232,7 +245,12 @@ impl Document for PdfDocument {
         chapter(offset, self.pages_count(), toc)
     }
 
-    fn chapter_relative<'a>(&mut self, offset: usize, dir: CycleDir, toc: &'a [TocEntry]) -> Option<&'a TocEntry> {
+    fn chapter_relative<'a>(
+        &mut self,
+        offset: usize,
+        dir: CycleDir,
+        toc: &'a [TocEntry],
+    ) -> Option<&'a TocEntry> {
         chapter_relative(offset, dir, toc)
     }
 
@@ -240,7 +258,13 @@ impl Document for PdfDocument {
         unsafe {
             let key = CString::new(key).unwrap();
             let mut buf: [libc::c_char; 256] = [0; 256];
-            let len = fz_lookup_metadata(self.ctx.0, self.doc, key.as_ptr(), buf.as_mut_ptr(), buf.len() as libc::c_int);
+            let len = fz_lookup_metadata(
+                self.ctx.0,
+                self.doc,
+                key.as_ptr(),
+                buf.as_mut_ptr(),
+                buf.len() as libc::c_int,
+            );
             if len == -1 {
                 None
             } else {
@@ -251,22 +275,30 @@ impl Document for PdfDocument {
 
     fn words(&mut self, loc: Location) -> Option<(Vec<BoundedText>, usize)> {
         let index = self.resolve_location(loc)?;
-        self.page(index).and_then(|page| page.words()).map(|words| (words, index))
+        self.page(index)
+            .and_then(|page| page.words())
+            .map(|words| (words, index))
     }
 
     fn lines(&mut self, loc: Location) -> Option<(Vec<BoundedText>, usize)> {
         let index = self.resolve_location(loc)?;
-        self.page(index).and_then(|page| page.lines()).map(|lines| (lines, index))
+        self.page(index)
+            .and_then(|page| page.lines())
+            .map(|lines| (lines, index))
     }
 
     fn images(&mut self, loc: Location) -> Option<(Vec<Boundary>, usize)> {
         let index = self.resolve_location(loc)?;
-        self.page(index).and_then(|page| page.images()).map(|images| (images, index))
+        self.page(index)
+            .and_then(|page| page.images())
+            .map(|images| (images, index))
     }
 
     fn links(&mut self, loc: Location) -> Option<(Vec<BoundedText>, usize)> {
         let index = self.resolve_location(loc)?;
-        self.page(index).and_then(|page| page.links()).map(|links| (links, index))
+        self.page(index)
+            .and_then(|page| page.links())
+            .map(|links| (links, index))
     }
 
     fn title(&self) -> Option<String> {
@@ -284,30 +316,27 @@ impl Document for PdfDocument {
     fn layout(&mut self, width: u32, height: u32, font_size: f32, dpi: u16) {
         let em = pt_to_px(font_size, dpi);
         unsafe {
-            fz_layout_document(self.ctx.0, self.doc,
-                               width as libc::c_float,
-                               height as libc::c_float,
-                               em as libc::c_float);
+            fz_layout_document(
+                self.ctx.0,
+                self.doc,
+                width as libc::c_float,
+                height as libc::c_float,
+                em as libc::c_float,
+            );
         }
     }
 
-    fn set_text_align(&mut self, _text_align: TextAlign) {
-    }
+    fn set_text_align(&mut self, _text_align: TextAlign) {}
 
-    fn set_font_family(&mut self, _family_name: &str, _search_path: &str) {
-    }
+    fn set_font_family(&mut self, _family_name: &str, _search_path: &str) {}
 
-    fn set_margin_width(&mut self, _width: i32) {
-    }
+    fn set_margin_width(&mut self, _width: i32) {}
 
-    fn set_line_height(&mut self, _line_height: f32) {
-    }
+    fn set_line_height(&mut self, _line_height: f32) {}
 
-    fn set_hyphen_penalty(&mut self, _hyphen_penalty: i32) {
-    }
+    fn set_hyphen_penalty(&mut self, _hyphen_penalty: i32) {}
 
-    fn set_stretch_tolerance(&mut self, _stretch_tolerance: f32) {
-    }
+    fn set_stretch_tolerance(&mut self, _stretch_tolerance: f32) {}
 
     fn set_ignore_document_css(&mut self, ignore: bool) {
         unsafe {
@@ -320,7 +349,10 @@ impl<'a> PdfPage<'a> {
     pub fn images(&self) -> Option<Vec<Boundary>> {
         unsafe {
             let mut images: Vec<Boundary> = Vec::new();
-            let opts = FzTextOptions { flags: FZ_TEXT_PRESERVE_IMAGES, scale: 1.0 };
+            let opts = FzTextOptions {
+                flags: FZ_TEXT_PRESERVE_IMAGES,
+                scale: 1.0,
+            };
             let tp = mp_new_stext_page_from_page(self.ctx.0, self.page, &opts);
             if tp.is_null() {
                 return None;
@@ -470,11 +502,8 @@ impl<'a> PdfPage<'a> {
     pub fn pixmap(&self, scale: f32) -> Option<Pixmap> {
         unsafe {
             let mat = fz_scale(scale as libc::c_float, scale as libc::c_float);
-            let pixmap = mp_new_pixmap_from_page(self.ctx.0,
-                                                 self.page,
-                                                 mat,
-                                                 fz_device_gray(self.ctx.0),
-                                                 0);
+            let pixmap =
+                mp_new_pixmap_from_page(self.ctx.0, self.page, mat, fz_device_gray(self.ctx.0), 0);
             if pixmap.is_null() {
                 return None;
             }
@@ -492,7 +521,11 @@ impl<'a> PdfPage<'a> {
 
             fz_drop_pixmap(self.ctx.0, pixmap);
 
-            Some(Pixmap { width, height, data })
+            Some(Pixmap {
+                width,
+                height,
+                data,
+            })
         }
     }
 
@@ -514,7 +547,10 @@ impl<'a> PdfPage<'a> {
     pub fn dims(&self) -> (f32, f32) {
         unsafe {
             let bounds = fz_bound_page(self.ctx.0, self.page);
-            ((bounds.x1 - bounds.x0) as f32, (bounds.y1 - bounds.y0) as f32)
+            (
+                (bounds.x1 - bounds.x0) as f32,
+                (bounds.y1 - bounds.y0) as f32,
+            )
         }
     }
 
@@ -531,18 +567,24 @@ impl<'a> PdfPage<'a> {
 
 impl Drop for PdfContext {
     fn drop(&mut self) {
-        unsafe { fz_drop_context(self.0); }
+        unsafe {
+            fz_drop_context(self.0);
+        }
     }
 }
 
 impl Drop for PdfDocument {
     fn drop(&mut self) {
-        unsafe { fz_drop_document(self.ctx.0, self.doc); }
+        unsafe {
+            fz_drop_document(self.ctx.0, self.doc);
+        }
     }
 }
 
 impl<'a> Drop for PdfPage<'a> {
     fn drop(&mut self) {
-        unsafe { fz_drop_page(self.ctx.0, self.page); }
+        unsafe {
+            fz_drop_page(self.ctx.0, self.page);
+        }
     }
 }
